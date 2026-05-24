@@ -1,0 +1,2328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeSentinel — AI Code Review Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080b0f;
+  --bg2: #0d1117;
+  --bg3: #161b22;
+  --bg4: #1c2128;
+  --border: #30363d;
+  --border2: #21262d;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --text3: #484f58;
+  --accent: #00d9ff;
+  --accent2: #7c3aed;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --orange: #db6d28;
+  --purple: #a371f7;
+  --pink: #f778ba;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-ui: 'Syne', sans-serif;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* NOISE TEXTURE */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0.4;
+}
+
+/* GRID BACKGROUND */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(var(--border2) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--border2) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* HEADER */
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  height: 60px;
+  background: rgba(8,11,15,0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.logo span { color: var(--accent); }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-dot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text2);
+  font-family: var(--font-mono);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(63,185,80,0.4); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(63,185,80,0); }
+}
+
+/* MAIN LAYOUT */
+main {
+  padding-top: 60px;
+  display: flex;
+  height: 100vh;
+}
+
+/* SIDEBAR */
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border2);
+}
+
+.sidebar-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+
+.repo-input-wrap {
+  position: relative;
+}
+
+.repo-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.repo-input:focus { border-color: var(--accent); }
+.repo-input::placeholder { color: var(--text3); }
+
+.quick-repos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.quick-repo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.quick-repo:hover { background: var(--bg3); border-color: var(--border2); }
+.quick-repo.active { background: rgba(0,217,255,0.08); border-color: rgba(0,217,255,0.3); }
+
+.quick-repo-icon { font-size: 14px; }
+.quick-repo-name { font-family: var(--font-mono); font-size: 11px; color: var(--text2); }
+
+/* STATS SECTION */
+.sidebar-stats {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border2);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-card {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ANALYSIS HISTORY */
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 4px;
+}
+
+.history-item:hover { background: var(--bg3); }
+
+.history-severity {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.history-info { flex: 1; min-width: 0; }
+.history-name { font-size: 11px; font-family: var(--font-mono); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-meta { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+/* CONTENT AREA */
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* TOOLBAR */
+.toolbar {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg2);
+}
+
+.toolbar-tabs {
+  display: flex;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 2px;
+}
+
+.tab {
+  padding: 6px 14px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--text2);
+  border: none;
+  background: none;
+}
+
+.tab.active {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.spacer { flex: 1; }
+
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #0099bb);
+  color: #000;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0,217,255,0.3);
+}
+
+.btn-primary:active { transform: translateY(0); }
+
+.btn-outline {
+  background: transparent;
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+
+.btn-outline:hover { background: var(--bg3); color: var(--text); }
+
+/* PANELS */
+.panel-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* CODE EDITOR PANEL */
+.editor-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border2);
+}
+
+.file-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 5px 5px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  cursor: pointer;
+  border-bottom-color: var(--bg);
+}
+
+.file-tab.active { color: var(--text); }
+
+.editor-body {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.code-area {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  padding: 16px 16px 16px 60px;
+  outline: none;
+  overflow-y: auto;
+  position: relative;
+  z-index: 2;
+  caret-color: var(--accent);
+}
+
+.line-numbers {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 48px;
+  padding: 16px 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text3);
+  text-align: right;
+  user-select: none;
+  z-index: 1;
+  border-right: 1px solid var(--border2);
+}
+
+/* ISSUE HIGHLIGHTS */
+.issue-line {
+  position: absolute;
+  left: 48px;
+  right: 0;
+  pointer-events: none;
+  opacity: 0.12;
+}
+
+.issue-line.critical { background: var(--red); }
+.issue-line.warning { background: var(--yellow); }
+.issue-line.info { background: var(--accent); }
+
+/* RESULTS PANEL */
+.results-panel {
+  width: 420px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg2);
+}
+
+.results-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.results-title {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-count {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+}
+
+.results-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.results-scroll::-webkit-scrollbar { width: 4px; }
+.results-scroll::-webkit-scrollbar-track { background: transparent; }
+.results-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ANALYSIS SECTIONS */
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text3);
+  padding: 4px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border2);
+}
+
+/* SCORE RING */
+.score-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  margin-bottom: 12px;
+}
+
+.score-ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+
+.score-ring svg {
+  transform: rotate(-90deg);
+}
+
+.score-ring .score-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transform: none;
+}
+
+.score-num {
+  font-size: 20px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+
+.score-sub {
+  font-size: 8px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.score-details { flex: 1; }
+.score-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+
+.mini-bars { display: flex; flex-direction: column; gap: 5px; }
+
+.mini-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-bar-label { font-size: 10px; color: var(--text3); width: 70px; flex-shrink: 0; font-family: var(--font-mono); }
+.mini-bar-track { flex: 1; height: 4px; background: var(--bg4); border-radius: 2px; overflow: hidden; }
+.mini-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.mini-bar-val { font-size: 10px; font-family: var(--font-mono); color: var(--text2); width: 24px; text-align: right; }
+
+/* ISSUE CARD */
+.issue-card {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: all 0.2s;
+  cursor: pointer;
+  animation: slideIn 0.3s ease both;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.issue-card:hover { border-color: var(--border); transform: translateX(-2px); }
+
+.issue-card.critical { border-left: 3px solid var(--red); }
+.issue-card.warning { border-left: 3px solid var(--yellow); }
+.issue-card.info { border-left: 3px solid var(--accent); }
+.issue-card.suggestion { border-left: 3px solid var(--purple); }
+.issue-card.security { border-left: 3px solid var(--orange); }
+
+.issue-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px 8px;
+}
+
+.issue-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.issue-right { flex: 1; min-width: 0; }
+
+.issue-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+  line-height: 1.4;
+}
+
+.issue-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.issue-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.tag-critical { background: rgba(248,81,73,0.15); color: var(--red); }
+.tag-warning { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.tag-info { background: rgba(0,217,255,0.1); color: var(--accent); }
+.tag-security { background: rgba(219,109,40,0.15); color: var(--orange); }
+.tag-perf { background: rgba(163,113,247,0.15); color: var(--purple); }
+.tag-style { background: rgba(247,120,186,0.15); color: var(--pink); }
+
+.issue-line-ref {
+  font-size: 10px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+}
+
+.issue-body {
+  padding: 0 12px 10px;
+  display: none;
+}
+
+.issue-body.open { display: block; }
+
+.issue-desc {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.issue-snippet {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.6;
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+
+.issue-snippet .del { color: var(--red); background: rgba(248,81,73,0.1); display: block; }
+.issue-snippet .add { color: var(--green); background: rgba(63,185,80,0.1); display: block; }
+
+.issue-fix-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: rgba(0,217,255,0.1);
+  border: 1px solid rgba(0,217,255,0.2);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+.issue-fix-btn:hover { background: rgba(0,217,255,0.2); }
+
+/* AI CHAT SECTION */
+.ai-chat {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: var(--bg2);
+}
+
+.chat-messages {
+  height: 120px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-messages::-webkit-scrollbar { width: 3px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.chat-msg {
+  display: flex;
+  gap: 8px;
+  animation: slideIn 0.2s ease both;
+}
+
+.chat-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.avatar-ai { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+.avatar-user { background: var(--bg4); border: 1px solid var(--border); }
+
+.chat-text { flex: 1; color: var(--text2); }
+.chat-text strong { color: var(--text); }
+
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-input {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.chat-input:focus { border-color: var(--accent); }
+.chat-input::placeholder { color: var(--text3); }
+
+.chat-send-btn {
+  padding: 7px 14px;
+  background: linear-gradient(135deg, var(--accent), #0099bb);
+  color: #000;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-ui);
+}
+
+.chat-send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,217,255,0.3); }
+
+/* LOADING ANIMATION */
+.analyzing-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(8,11,15,0.85);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.analyzing-overlay.show { display: flex; }
+
+.analyzing-spinner {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.spinner-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  animation: spin 1.2s linear infinite;
+}
+
+.spinner-ring:nth-child(1) { border-top-color: var(--accent); }
+.spinner-ring:nth-child(2) { inset: 6px; border-top-color: var(--accent2); animation-duration: 0.9s; animation-direction: reverse; }
+.spinner-ring:nth-child(3) { inset: 12px; border-top-color: var(--green); animation-duration: 0.7s; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.analyzing-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
+}
+
+.analysis-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+  transition: color 0.3s;
+}
+
+.analysis-step.done { color: var(--green); }
+.analysis-step.active { color: var(--accent); }
+
+.step-icon { font-size: 12px; width: 14px; text-align: center; }
+
+/* SECURITY RADAR */
+.radar-section {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.radar-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text3);
+  margin-bottom: 10px;
+}
+
+.radar-canvas-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.radar-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.radar-leg-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text2);
+}
+
+.radar-leg-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+/* COMPLEXITY CHART */
+.complexity-section {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.complexity-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.complexity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.complexity-fn {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text2);
+  width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.complexity-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: var(--bg4);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.complexity-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.complexity-score {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  width: 20px;
+  text-align: right;
+}
+
+/* GIT DIFF VIEW */
+.diff-section {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.diff-header {
+  padding: 10px 14px;
+  background: var(--bg4);
+  border-bottom: 1px solid var(--border2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diff-line {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.diff-line-num {
+  width: 32px;
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text3);
+  user-select: none;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.diff-line-code { flex: 1; padding: 0 12px; }
+.diff-line.diff-add { background: rgba(63,185,80,0.08); }
+.diff-line.diff-add .diff-line-code { color: var(--green); }
+.diff-line.diff-del { background: rgba(248,81,73,0.08); }
+.diff-line.diff-del .diff-line-code { color: var(--red); text-decoration: line-through; }
+.diff-line.diff-neutral .diff-line-code { color: var(--text2); }
+
+/* PR SUMMARY CARD */
+.pr-summary {
+  background: linear-gradient(135deg, rgba(0,217,255,0.05), rgba(124,58,237,0.05));
+  border: 1px solid rgba(0,217,255,0.15);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.pr-summary-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr-summary-body {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.7;
+}
+
+/* SEVERITY DONUT */
+.severity-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.sev-card {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 10px;
+  text-align: center;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.sev-card:hover { transform: translateY(-2px); }
+
+.sev-card.filter-active { border-color: var(--accent); background: rgba(0,217,255,0.05); }
+
+.sev-num {
+  font-size: 20px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.sev-label { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* COPY/EXPORT */
+.export-bar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border2);
+}
+
+.export-btn {
+  flex: 1;
+  padding: 7px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+.export-btn:hover { background: var(--bg4); color: var(--text); }
+
+/* EMPTY STATE */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px;
+  text-align: center;
+}
+
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+}
+
+.empty-title { font-size: 16px; font-weight: 700; }
+.empty-desc { font-size: 13px; color: var(--text2); line-height: 1.6; max-width: 280px; }
+
+/* TOAST */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  z-index: 999;
+  transform: translateY(20px);
+  opacity: 0;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toast.show { transform: translateY(0); opacity: 1; }
+
+/* TOOLTIPS */
+.tooltip-wrap {
+  position: relative;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-family: var(--font-mono);
+}
+
+.tooltip-wrap:hover .tooltip { opacity: 1; }
+
+/* SCROLLBARS */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* PULSE ANIMATION FOR ISSUES */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; }
+  50% { box-shadow: 0 0 8px 2px currentColor; }
+}
+
+/* MOBILE BANNER */
+.mobile-banner {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .mobile-banner { display: flex; }
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: var(--accent);
+  margin-left: 2px;
+  animation: blink 0.8s infinite;
+  vertical-align: middle;
+}
+@keyframes blink { 0%,49% { opacity:1; } 50%,100% { opacity:0; } }
+</style>
+</head>
+<body>
+
+<!-- Mobile Banner -->
+<div class="mobile-banner">
+  <div class="empty-icon">🖥️</div>
+  <div class="empty-title">Best on Desktop</div>
+  <div class="empty-desc">CodeSentinel is optimized for wider screens. Please open on a desktop or laptop browser for the full experience.</div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡️</div>
+    Code<span>Sentinel</span>
+  </div>
+  <div class="header-actions">
+    <div class="status-dot">
+      <div class="dot"></div>
+      AI Engine Online
+    </div>
+    <button class="btn btn-outline" onclick="showToast('⚙️ Settings panel coming soon')">⚙ Settings</button>
+  </div>
+</header>
+
+<main>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">Repository</div>
+      <div class="repo-input-wrap">
+        <input class="repo-input" id="repoInput" placeholder="owner/repo or paste code" value="facebook/react" />
+      </div>
+      <div class="quick-repos" style="margin-top:12px;">
+        <div class="sidebar-title">Quick Load</div>
+        <div class="quick-repo active" onclick="loadSample('auth')">
+          <span class="quick-repo-icon">🔐</span>
+          <span class="quick-repo-name">auth/login.js</span>
+        </div>
+        <div class="quick-repo" onclick="loadSample('api')">
+          <span class="quick-repo-icon">🌐</span>
+          <span class="quick-repo-name">api/payments.py</span>
+        </div>
+        <div class="quick-repo" onclick="loadSample('db')">
+          <span class="quick-repo-icon">🗄️</span>
+          <span class="quick-repo-name">db/queries.js</span>
+        </div>
+        <div class="quick-repo" onclick="loadSample('react')">
+          <span class="quick-repo-icon">⚛️</span>
+          <span class="quick-repo-name">components/UserList.jsx</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-stats">
+      <div class="sidebar-title">Session Stats</div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-reviews" style="color:var(--accent)">0</div>
+          <div class="stat-label">Reviews</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-bugs" style="color:var(--red)">0</div>
+          <div class="stat-label">Bugs Found</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-security" style="color:var(--orange)">0</div>
+          <div class="stat-label">Security</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-fixed" style="color:var(--green)">0</div>
+          <div class="stat-label">Auto-Fixed</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-header" style="padding-top:12px;">
+      <div class="sidebar-title">Analysis History</div>
+    </div>
+    <div class="history-list" id="historyList">
+      <div style="font-size:11px;color:var(--text3);text-align:center;padding:20px;font-family:var(--font-mono);">
+        No analyses yet
+      </div>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <div class="content">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-tabs">
+        <button class="tab active" onclick="switchTab('editor', this)">📝 Editor</button>
+        <button class="tab" onclick="switchTab('diff', this)">🔀 Diff View</button>
+        <button class="tab" onclick="switchTab('metrics', this)">📊 Metrics</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-outline" onclick="clearEditor()" style="padding:8px 12px;font-size:12px;">🗑 Clear</button>
+      <button class="btn btn-primary" onclick="startAnalysis()" id="analyzeBtn">
+        🤖 Analyze with AI
+      </button>
+    </div>
+
+    <!-- Panel Area -->
+    <div class="panel-area" style="position:relative;">
+      <!-- Analyzing Overlay -->
+      <div class="analyzing-overlay" id="analyzingOverlay">
+        <div class="analyzing-spinner">
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+        </div>
+        <div class="analyzing-steps" id="analyzingSteps">
+          <div class="analysis-step" id="step1"><span class="step-icon">⬜</span> Parsing code structure...</div>
+          <div class="analysis-step" id="step2"><span class="step-icon">⬜</span> Detecting security vulnerabilities...</div>
+          <div class="analysis-step" id="step3"><span class="step-icon">⬜</span> Analyzing performance patterns...</div>
+          <div class="analysis-step" id="step4"><span class="step-icon">⬜</span> Checking code quality...</div>
+          <div class="analysis-step" id="step5"><span class="step-icon">⬜</span> Generating fix suggestions...</div>
+          <div class="analysis-step" id="step6"><span class="step-icon">⬜</span> Computing quality score...</div>
+        </div>
+      </div>
+
+      <!-- Editor Tab -->
+      <div id="tab-editor" class="editor-panel">
+        <div class="editor-header">
+          <div class="file-tab active" id="fileTabName">📄 auth/login.js</div>
+          <div style="flex:1;"></div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--font-mono);" id="langLabel">JavaScript</div>
+        </div>
+        <div class="editor-body">
+          <div class="line-numbers" id="lineNumbers">1</div>
+          <textarea class="code-area" id="codeInput" spellcheck="false" oninput="updateLineNumbers()" onscroll="syncScroll(this)"></textarea>
+        </div>
+      </div>
+
+      <!-- Diff Tab (hidden) -->
+      <div id="tab-diff" class="editor-panel" style="display:none;">
+        <div class="editor-header">
+          <div class="file-tab active">🔀 Suggested Changes</div>
+        </div>
+        <div class="editor-body" id="diffContent" style="overflow-y:auto;padding:16px;font-family:var(--font-mono);font-size:12px;line-height:1.7;">
+          <div style="color:var(--text3);font-family:var(--font-mono);font-size:12px;">Run an analysis to see suggested diff changes</div>
+        </div>
+      </div>
+
+      <!-- Metrics Tab (hidden) -->
+      <div id="tab-metrics" class="editor-panel" style="display:none;">
+        <div id="metricsContent" style="flex:1;overflow-y:auto;padding:16px;">
+          <div style="color:var(--text3);font-family:var(--font-mono);font-size:12px;">Run an analysis to see code metrics</div>
+        </div>
+      </div>
+
+      <!-- Results Panel -->
+      <div class="results-panel">
+        <div class="results-header">
+          <div class="results-title">
+            🔍 Analysis Results
+            <span class="badge-count" id="issueCount" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border2);">0 issues</span>
+          </div>
+          <button class="btn-outline btn" style="padding:5px 10px;font-size:11px;" onclick="copyResults()">📋 Copy</button>
+        </div>
+
+        <div class="results-scroll" id="resultsScroll">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">🤖</div>
+            <div class="empty-title">Ready to Review</div>
+            <div class="empty-desc">Paste your code or pick a sample, then click "Analyze with AI" to get a comprehensive security, performance, and quality review.</div>
+          </div>
+          <div id="resultsContent" style="display:none;"></div>
+        </div>
+
+        <!-- AI Chat -->
+        <div class="ai-chat">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px;">💬 Ask AI About This Code</div>
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg">
+              <div class="chat-avatar avatar-ai">AI</div>
+              <div class="chat-text">Hi! Analyze your code first, then ask me anything about it — security fixes, refactoring ideas, or performance tips.</div>
+            </div>
+          </div>
+          <div class="chat-input-row">
+            <input class="chat-input" id="chatInput" placeholder="Ask about the code..." onkeydown="if(event.key==='Enter') sendChat()"/>
+            <button class="chat-send-btn" onclick="sendChat()">Send</button>
+          </div>
+        </div>
+
+        <div class="export-bar">
+          <button class="export-btn" onclick="exportMarkdown()">📄 Export MD</button>
+          <button class="export-btn" onclick="exportJSON()">📦 Export JSON</button>
+          <button class="export-btn" onclick="generatePRComment()">🐙 PR Comment</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── SAMPLE CODE SNIPPETS ───────────────────────────────────────────────────
+
+const SAMPLES = {
+  auth: {
+    name: 'auth/login.js',
+    lang: 'JavaScript',
+    code: `// User Authentication Service
+const mysql = require('mysql');
+const crypto = require('crypto');
+
+const db = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: 'password123',
+  database: 'users_db'
+});
+
+async function loginUser(username, password) {
+  // Check if user exists
+  const query = "SELECT * FROM users WHERE username = '" + username + "'";
+  
+  return new Promise((resolve, reject) => {
+    db.query(query, (err, results) => {
+      if (err) reject(err);
+      
+      if (results.length > 0) {
+        const user = results[0];
+        
+        // Compare passwords
+        if (user.password === password) {
+          const token = Math.random().toString(36).substring(7);
+          
+          // Store session
+          db.query("UPDATE users SET session_token = '" + token + "' WHERE id = " + user.id);
+          
+          console.log('User logged in: ' + username + ' with password: ' + password);
+          resolve({ success: true, token: token, user: user });
+        } else {
+          resolve({ success: false, message: 'Invalid credentials' });
+        }
+      } else {
+        resolve({ success: false, message: 'User not found' });
+      }
+    });
+  });
+}
+
+function resetPassword(email, newPassword) {
+  const query = "UPDATE users SET password = '" + newPassword + "' WHERE email = '" + email + "'";
+  db.query(query);
+  
+  // Send reset email (placeholder)
+  sendEmail(email, 'Your new password is: ' + newPassword);
+}
+
+function getUserData(userId) {
+  eval("db.query('SELECT * FROM users WHERE id = " + userId + "')");
+}
+
+module.exports = { loginUser, resetPassword, getUserData };`
+  },
+  api: {
+    name: 'api/payments.py',
+    lang: 'Python',
+    code: `# Payment Processing API
+import sqlite3
+import requests
+import pickle
+import os
+
+STRIPE_KEY = "sk_live_REAL_SECRET_KEY_HERE"
+DB_PATH = "/var/app/payments.db"
+
+def process_payment(user_id, amount, card_data):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Validate amount
+    if amount > 0:
+        # Charge card via Stripe
+        response = requests.post(
+            'https://api.stripe.com/v1/charges',
+            data={
+                'amount': amount,
+                'currency': 'usd',
+                'source': card_data['token']
+            },
+            headers={'Authorization': 'Bearer ' + STRIPE_KEY}
+        )
+        
+        # Store transaction (no parameterized queries!)
+        query = f"INSERT INTO transactions VALUES ({user_id}, {amount}, '{card_data['number']}')"
+        cursor.execute(query)
+        conn.commit()
+        
+        return response.json()
+
+def get_user_transactions(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # SQL Injection vulnerability
+    query = "SELECT * FROM transactions WHERE user_id = " + str(user_id)
+    cursor.execute(query)
+    results = cursor.fetchall()
+    
+    # No connection close - resource leak
+    return results
+
+def load_payment_config(config_file):
+    # Unsafe deserialization
+    with open(config_file, 'rb') as f:
+        config = pickle.load(f)
+    return config
+
+def retry_failed_payments():
+    failed = get_failed_transactions()
+    for payment in failed:
+        # No rate limiting, no exponential backoff
+        while True:
+            result = process_payment(payment.user_id, payment.amount, payment.card)
+            if result.get('success'):
+                break`
+  },
+  db: {
+    name: 'db/queries.js',
+    lang: 'JavaScript',
+    code: `// Database Query Module
+const mongoose = require('mongoose');
+
+// Global connection - never closed
+let cachedDb = null;
+
+function getDatabase() {
+  if (!cachedDb) {
+    cachedDb = mongoose.connect('mongodb://admin:secret@localhost:27017/prod', {
+      useNewUrlParser: true
+    });
+  }
+  return cachedDb;
+}
+
+// N+1 query problem
+async function getUsersWithPosts() {
+  const users = await User.find({});
+  
+  // This fires a query PER user!
+  for (let user of users) {
+    user.posts = await Post.find({ userId: user._id });
+    user.comments = await Comment.find({ userId: user._id });
+    user.likes = await Like.find({ userId: user._id });
+  }
+  
+  return users;
+}
+
+// No pagination - loads entire collection
+async function getAllProducts() {
+  return await Product.find({})
+    .populate('category')
+    .populate('reviews')
+    .populate('seller');
+}
+
+// No indexes defined for this frequent query
+async function searchProducts(searchTerm) {
+  return await Product.find({
+    $or: [
+      { name: { $regex: searchTerm } },
+      { description: { $regex: searchTerm } }
+    ]
+  });
+}
+
+// Memory leak - accumulating results
+const queryCache = [];
+async function cachedQuery(query) {
+  const result = await mongoose.connection.db.collection('data').find(query).toArray();
+  queryCache.push({ query, result, timestamp: Date.now() }); // Never evicted
+  return result;
+}
+
+module.exports = { getUsersWithPosts, getAllProducts, searchProducts };`
+  },
+  react: {
+    name: 'components/UserList.jsx',
+    lang: 'JSX',
+    code: `// UserList Component
+import React, { useState, useEffect } from 'react';
+
+function UserList({ adminKey }) {
+  const [users, setUsers] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Missing dependency array - infinite loop!
+  useEffect(() => {
+    fetch('/api/users?key=' + adminKey)
+      .then(res => res.json())
+      .then(data => setUsers(data));
+  });
+  
+  // XSS vulnerability - dangerouslySetInnerHTML
+  function renderUserBio(bio) {
+    return <div dangerouslySetInnerHTML={{ __html: bio }} />;
+  }
+  
+  // No key prop in list
+  const userItems = users.map(user => (
+    <div className="user-card">
+      <img src={user.avatarUrl} />
+      {renderUserBio(user.bio)}
+      <span>{user.email}</span>
+    </div>
+  ));
+  
+  // Exposing API key in URL
+  const exportUrl = \`/api/export?adminKey=\${adminKey}&format=csv\`;
+  
+  // No error boundary, no loading state
+  return (
+    <div>
+      <h1>All Users ({users.length})</h1>
+      <input 
+        value={searchTerm}
+        onChange={e => setSearchTerm(e.target.value)}
+      />
+      {/* Filtering on every render - should useMemo */}
+      {users.filter(u => u.name.includes(searchTerm)).map(u => (
+        <div>{u.name}</div>
+      ))}
+      <a href={exportUrl}>Export All Users</a>
+      {userItems}
+    </div>
+  );
+}
+
+export default UserList;`
+  }
+};
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+
+let currentAnalysis = null;
+let sessionStats = { reviews: 0, bugs: 0, security: 0, fixed: 0 };
+let analysisHistory = [];
+let currentFilter = null;
+let analysisResults = null;
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+
+window.onload = () => {
+  loadSample('auth');
+};
+
+function loadSample(key) {
+  const sample = SAMPLES[key];
+  if (!sample) return;
+  
+  document.getElementById('codeInput').value = sample.code;
+  document.getElementById('fileTabName').textContent = '📄 ' + sample.name;
+  document.getElementById('langLabel').textContent = sample.lang;
+  updateLineNumbers();
+  
+  document.querySelectorAll('.quick-repo').forEach(el => el.classList.remove('active'));
+  const idx = ['auth','api','db','react'].indexOf(key);
+  document.querySelectorAll('.quick-repo')[idx]?.classList.add('active');
+  
+  showToast('📁 Loaded ' + sample.name);
+}
+
+function clearEditor() {
+  document.getElementById('codeInput').value = '';
+  updateLineNumbers();
+}
+
+function updateLineNumbers() {
+  const lines = document.getElementById('codeInput').value.split('\n');
+  const nums = lines.map((_, i) => i + 1).join('\n');
+  document.getElementById('lineNumbers').textContent = nums;
+}
+
+function syncScroll(el) {
+  document.getElementById('lineNumbers').scrollTop = el.scrollTop;
+}
+
+function switchTab(tab, btn) {
+  document.querySelectorAll('.toolbar-tabs .tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  
+  ['editor','diff','metrics'].forEach(t => {
+    const el = document.getElementById('tab-' + t);
+    if (el) el.style.display = t === tab ? 'flex' : 'none';
+  });
+  
+  if (tab === 'metrics' && !analysisResults) {
+    showToast('⚠️ Run an analysis first to see metrics');
+  }
+}
+
+// ─── MAIN ANALYSIS ───────────────────────────────────────────────────────────
+
+async function startAnalysis() {
+  const code = document.getElementById('codeInput').value.trim();
+  if (!code) {
+    showToast('⚠️ Please paste some code first');
+    return;
+  }
+
+  const overlay = document.getElementById('analyzingOverlay');
+  overlay.classList.add('show');
+  
+  const steps = ['step1','step2','step3','step4','step5','step6'];
+  steps.forEach(s => {
+    const el = document.getElementById(s);
+    el.className = 'analysis-step';
+    el.querySelector('.step-icon').textContent = '⬜';
+  });
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('resultsContent').style.display = 'none';
+
+  for (let i = 0; i < steps.length; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    const el = document.getElementById(steps[i]);
+    el.className = 'analysis-step active';
+    el.querySelector('.step-icon').textContent = '🔄';
+    
+    if (i > 0) {
+      const prev = document.getElementById(steps[i-1]);
+      prev.className = 'analysis-step done';
+      prev.querySelector('.step-icon').textContent = '✅';
+    }
+  }
+
+  try {
+    const lang = document.getElementById('langLabel').textContent;
+    const result = await callClaudeAPI(code, lang);
+    
+    steps.forEach(s => {
+      const el = document.getElementById(s);
+      el.className = 'analysis-step done';
+      el.querySelector('.step-icon').textContent = '✅';
+    });
+    
+    await new Promise(r => setTimeout(r, 400));
+    overlay.classList.remove('show');
+    
+    analysisResults = result;
+    renderResults(result, code);
+    updateStats(result);
+    addHistory(result);
+    
+  } catch (err) {
+    overlay.classList.remove('show');
+    showToast('❌ Analysis failed: ' + err.message);
+  }
+}
+
+// ─── CLAUDE API ──────────────────────────────────────────────────────────────
+
+async function callClaudeAPI(code, lang) {
+  const systemPrompt = `You are CodeSentinel, an elite AI code review assistant. Analyze code with extreme precision.
+
+Return ONLY valid JSON (no markdown, no backticks) in this exact structure:
+{
+  "score": <number 0-100>,
+  "scores": { "security": <0-100>, "performance": <0-100>, "maintainability": <0-100>, "testability": <0-100>, "documentation": <0-100> },
+  "summary": "<2-3 sentence executive summary of the code quality>",
+  "pr_title": "<suggested PR review title>",
+  "issues": [
+    {
+      "id": "<unique id>",
+      "severity": "<critical|warning|info|suggestion|security>",
+      "category": "<Security|Performance|Bug|Style|Logic|Memory>",
+      "title": "<short title>",
+      "description": "<detailed explanation of the problem>",
+      "line": <approximate line number>,
+      "old_code": "<the problematic code snippet, max 3 lines>",
+      "new_code": "<the fixed code snippet, max 3 lines>",
+      "impact": "<what could go wrong if not fixed>"
+    }
+  ],
+  "complexity": [
+    { "fn": "<function name>", "score": <1-20> }
+  ],
+  "radar": { "injection": <0-10>, "auth": <0-10>, "exposure": <0-10>, "xss": <0-10>, "logic": <0-10>, "deps": <0-10> },
+  "diff_suggestions": [
+    { "line": <number>, "type": "<add|del|neutral>", "code": "<code line>" }
+  ]
+}
+
+Be thorough. Find ALL real issues. For security issues be very specific about CVE patterns. Provide actual working code fixes.`;
+
+  const userPrompt = `Review this ${lang} code and find all bugs, security vulnerabilities, performance issues, and code quality problems:\n\n${code}`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error('API error: ' + response.status);
+  }
+
+  const data = await response.json();
+  const text = data.content[0].text;
+  
+  let clean = text.trim();
+  if (clean.startsWith('```')) {
+    clean = clean.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  }
+  
+  return JSON.parse(clean);
+}
+
+// ─── RENDER RESULTS ──────────────────────────────────────────────────────────
+
+function renderResults(data, code) {
+  const container = document.getElementById('resultsContent');
+  container.style.display = 'block';
+  
+  const total = (data.issues || []).length;
+  const critical = (data.issues || []).filter(i => i.severity === 'critical').length;
+  const warnings = (data.issues || []).filter(i => i.severity === 'warning').length;
+  const security = (data.issues || []).filter(i => i.severity === 'security').length;
+  const info = total - critical - warnings - security;
+
+  document.getElementById('issueCount').textContent = total + ' issue' + (total !== 1 ? 's' : '');
+  document.getElementById('issueCount').style.background = total > 5 ? 'rgba(248,81,73,0.15)' : 'rgba(63,185,80,0.1)';
+  document.getElementById('issueCount').style.color = total > 5 ? 'var(--red)' : 'var(--green)';
+
+  const score = data.score || 50;
+  const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
+  const circumference = 2 * Math.PI * 28;
+  const dashoffset = circumference * (1 - score / 100);
+
+  let html = `
+    <!-- PR SUMMARY -->
+    <div class="pr-summary">
+      <div class="pr-summary-title">
+        🧠 AI Review Summary
+      </div>
+      <div class="pr-summary-body">${data.summary || 'Analysis complete.'}</div>
+    </div>
+
+    <!-- SCORE -->
+    <div class="score-section">
+      <div class="score-ring">
+        <svg width="72" height="72" viewBox="0 0 72 72">
+          <circle cx="36" cy="36" r="28" fill="none" stroke="var(--bg4)" stroke-width="5"/>
+          <circle cx="36" cy="36" r="28" fill="none" stroke="${scoreColor}" stroke-width="5"
+            stroke-dasharray="${circumference}" stroke-dashoffset="${dashoffset}"
+            stroke-linecap="round" style="transition:stroke-dashoffset 1s ease"/>
+        </svg>
+        <div class="score-text">
+          <div class="score-num" style="color:${scoreColor}">${score}</div>
+          <div class="score-sub">/ 100</div>
+        </div>
+      </div>
+      <div class="score-details">
+        <div class="score-title">Code Health Score</div>
+        <div class="mini-bars">`;
+
+  const scoreItems = [
+    ['Security', data.scores?.security ?? 50, 'var(--orange)'],
+    ['Performance', data.scores?.performance ?? 50, 'var(--purple)'],
+    ['Quality', data.scores?.maintainability ?? 50, 'var(--accent)'],
+    ['Testability', data.scores?.testability ?? 50, 'var(--green)'],
+  ];
+
+  for (const [label, val, color] of scoreItems) {
+    html += `
+      <div class="mini-bar-row">
+        <span class="mini-bar-label">${label}</span>
+        <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${val}%;background:${color};"></div></div>
+        <span class="mini-bar-val" style="color:${color}">${val}</span>
+      </div>`;
+  }
+
+  html += `</div></div></div>`;
+
+  // SEVERITY FILTERS
+  html += `
+    <div class="severity-row">
+      <div class="sev-card" onclick="filterIssues('critical')" id="sev-critical">
+        <div class="sev-num" style="color:var(--red)">${critical}</div>
+        <div class="sev-label">Critical</div>
+      </div>
+      <div class="sev-card" onclick="filterIssues('security')" id="sev-security">
+        <div class="sev-num" style="color:var(--orange)">${security}</div>
+        <div class="sev-label">Security</div>
+      </div>
+      <div class="sev-card" onclick="filterIssues('warning')" id="sev-warning">
+        <div class="sev-num" style="color:var(--yellow)">${warnings}</div>
+        <div class="sev-label">Warning</div>
+      </div>
+      <div class="sev-card" onclick="filterIssues(null)" id="sev-all">
+        <div class="sev-num" style="color:var(--text)">${total}</div>
+        <div class="sev-label">All</div>
+      </div>
+    </div>`;
+
+  // SECURITY RADAR
+  if (data.radar) {
+    const radarItems = [
+      ['Injection', data.radar.injection ?? 5, 'var(--red)'],
+      ['Auth Issues', data.radar.auth ?? 5, 'var(--orange)'],
+      ['Data Exposure', data.radar.exposure ?? 5, 'var(--yellow)'],
+      ['XSS Risk', data.radar.xss ?? 5, 'var(--purple)'],
+      ['Logic Errors', data.radar.logic ?? 5, 'var(--accent)'],
+      ['Dep Risk', data.radar.deps ?? 5, 'var(--green)'],
+    ];
+    
+    html += `<div class="section-label">Security Radar</div>
+    <div class="radar-section">
+      <div class="radar-title">Threat Surface Analysis</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">`;
+    
+    for (const [label, val, color] of radarItems) {
+      const pct = (val / 10) * 100;
+      html += `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:10px;font-family:var(--font-mono);color:var(--text3);width:90px;flex-shrink:0;">${label}</span>
+          <div style="flex:1;height:5px;background:var(--bg4);border-radius:2px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:${color};border-radius:2px;transition:width 1s ease;"></div>
+          </div>
+          <span style="font-size:10px;font-family:var(--font-mono);color:${color};width:16px;text-align:right;">${val}</span>
+        </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // ISSUES LIST
+  html += `<div class="section-label">Issues Found</div><div id="issuesList">`;
+  
+  const sorted = [...(data.issues || [])].sort((a, b) => {
+    const order = { critical: 0, security: 1, warning: 2, info: 3, suggestion: 4 };
+    return (order[a.severity] ?? 5) - (order[b.severity] ?? 5);
+  });
+
+  for (let i = 0; i < sorted.length; i++) {
+    const issue = sorted[i];
+    const iconMap = { critical: '🔴', warning: '🟡', info: '🔵', security: '🔶', suggestion: '💜' };
+    const tagMap = {
+      critical: 'tag-critical', warning: 'tag-warning', info: 'tag-info',
+      security: 'tag-security', suggestion: 'tag-perf'
+    };
+    const catTagMap = {
+      Security: 'tag-security', Performance: 'tag-perf', Bug: 'tag-critical',
+      Style: 'tag-style', Logic: 'tag-warning', Memory: 'tag-perf'
+    };
+
+    html += `
+      <div class="issue-card ${issue.severity}" id="issue-${i}" onclick="toggleIssue(${i})" style="animation-delay:${i * 50}ms">
+        <div class="issue-header">
+          <div class="issue-icon">${iconMap[issue.severity] || '🔷'}</div>
+          <div class="issue-right">
+            <div class="issue-title">${escapeHtml(issue.title)}</div>
+            <div class="issue-meta">
+              <span class="issue-tag ${tagMap[issue.severity] || 'tag-info'}">${issue.severity.toUpperCase()}</span>
+              <span class="issue-tag ${catTagMap[issue.category] || 'tag-info'}">${issue.category}</span>
+              <span class="issue-line-ref">Line ~${issue.line}</span>
+            </div>
+          </div>
+        </div>
+        <div class="issue-body" id="body-${i}">
+          <div class="issue-desc">${escapeHtml(issue.description)}</div>`;
+
+    if (issue.old_code || issue.new_code) {
+      html += `<div class="issue-snippet">`;
+      if (issue.old_code) {
+        issue.old_code.split('\n').forEach(l => {
+          html += `<span class="del">- ${escapeHtml(l)}</span>`;
+        });
+      }
+      if (issue.new_code) {
+        issue.new_code.split('\n').forEach(l => {
+          html += `<span class="add">+ ${escapeHtml(l)}</span>`;
+        });
+      }
+      html += `</div>`;
+    }
+    
+    if (issue.impact) {
+      html += `<div style="font-size:11px;color:var(--orange);margin-bottom:8px;">⚠️ Impact: ${escapeHtml(issue.impact)}</div>`;
+    }
+
+    html += `
+          <button class="issue-fix-btn" onclick="event.stopPropagation(); applyFix(${i})">
+            ⚡ Apply Fix
+          </button>
+        </div>
+      </div>`;
+  }
+
+  html += `</div>`;
+
+  // COMPLEXITY
+  if (data.complexity && data.complexity.length) {
+    html += `<div class="section-label">Function Complexity</div>
+    <div class="complexity-section">
+      <div class="complexity-bars">`;
+    
+    for (const fn of data.complexity.slice(0, 6)) {
+      const score = fn.score || 5;
+      const pct = (score / 20) * 100;
+      const color = score > 15 ? 'var(--red)' : score > 10 ? 'var(--yellow)' : score > 5 ? 'var(--accent)' : 'var(--green)';
+      html += `
+        <div class="complexity-row">
+          <span class="complexity-fn" title="${escapeHtml(fn.fn)}">${escapeHtml(fn.fn)}</span>
+          <div class="complexity-bar-bg"><div class="complexity-bar-fill" style="width:${pct}%;background:${color};"></div></div>
+          <span class="complexity-score" style="color:${color}">${score}</span>
+        </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  container.innerHTML = html;
+  currentFilter = null;
+
+  // Render diff view
+  renderDiff(data, code);
+  
+  // Render metrics view
+  renderMetrics(data);
+}
+
+function toggleIssue(i) {
+  const body = document.getElementById('body-' + i);
+  body.classList.toggle('open');
+}
+
+function filterIssues(severity) {
+  currentFilter = severity;
+  const cards = document.querySelectorAll('.issue-card');
+  cards.forEach(card => {
+    if (!severity || card.classList.contains(severity)) {
+      card.style.display = '';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+
+  document.querySelectorAll('.sev-card').forEach(c => c.classList.remove('filter-active'));
+  if (severity) {
+    document.getElementById('sev-' + severity)?.classList.add('filter-active');
+  } else {
+    document.getElementById('sev-all')?.classList.add('filter-active');
+  }
+}
+
+function applyFix(index) {
+  if (!analysisResults?.issues?.[index]) return;
+  const issue = analysisResults.issues[index];
+  
+  if (issue.old_code && issue.new_code) {
+    const codeArea = document.getElementById('codeInput');
+    const current = codeArea.value;
+    const oldLines = issue.old_code.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    let replaced = false;
+    for (const oldLine of oldLines) {
+      if (current.includes(oldLine)) {
+        codeArea.value = current.replace(oldLine, issue.new_code.split('\n')[0]);
+        replaced = true;
+        break;
+      }
+    }
+    
+    sessionStats.fixed++;
+    document.getElementById('stat-fixed').textContent = sessionStats.fixed;
+    
+    if (replaced) {
+      showToast('✅ Fix applied to editor!');
+    } else {
+      showToast('✅ Fix logged (manual apply needed)');
+    }
+    updateLineNumbers();
+  } else {
+    showToast('💡 Review the suggestion above and apply manually');
+  }
+}
+
+function renderDiff(data, code) {
+  if (!data.diff_suggestions || data.diff_suggestions.length === 0) {
+    document.getElementById('diffContent').innerHTML = `
+      <div class="diff-section">
+        <div class="diff-header">
+          <span>📄 Suggested Changes</span>
+          <span style="color:var(--green)">+${(data.issues||[]).filter(i=>i.new_code).length} fixes available</span>
+        </div>
+        ${(data.issues||[]).filter(i=>i.old_code||i.new_code).map((issue,i) => `
+          <div style="padding:8px 12px;border-bottom:1px solid var(--border2);">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-family:var(--font-mono);">
+              // ${escapeHtml(issue.title)} — Line ~${issue.line}
+            </div>
+            ${(issue.old_code||'').split('\n').map(l=>`
+              <div class="diff-line diff-del">
+                <span class="diff-line-num">-</span>
+                <span class="diff-line-code">${escapeHtml(l)}</span>
+              </div>`).join('')}
+            ${(issue.new_code||'').split('\n').map(l=>`
+              <div class="diff-line diff-add">
+                <span class="diff-line-num">+</span>
+                <span class="diff-line-code">${escapeHtml(l)}</span>
+              </div>`).join('')}
+          </div>`).join('')}
+      </div>`;
+    return;
+  }
+
+  let html = `<div class="diff-section"><div class="diff-header"><span>📄 Suggested Diff</span></div>`;
+  for (const line of data.diff_suggestions) {
+    html += `
+      <div class="diff-line diff-${line.type}">
+        <span class="diff-line-num">${line.line}</span>
+        <span class="diff-line-code">${escapeHtml(line.code || '')}</span>
+      </div>`;
+  }
+  html += `</div>`;
+  document.getElementById('diffContent').innerHTML = html;
+}
+
+function renderMetrics(data) {
+  const s = data.scores || {};
+  const issues = data.issues || [];
+  const bySeverity = {};
+  issues.forEach(i => { bySeverity[i.severity] = (bySeverity[i.severity] || 0) + 1; });
+  
+  let html = `
+    <div class="section-label">Code Quality Metrics</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">`;
+  
+  const metrics = [
+    ['Security', s.security ?? 50, 'var(--orange)'],
+    ['Performance', s.performance ?? 50, 'var(--purple)'],
+    ['Maintainability', s.maintainability ?? 50, 'var(--accent)'],
+    ['Testability', s.testability ?? 50, 'var(--green)'],
+    ['Documentation', s.documentation ?? 50, 'var(--pink)'],
+    ['Overall', data.score ?? 50, 'var(--text)'],
+  ];
+
+  for (const [label, val, color] of metrics) {
+    html += `
+      <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:12px;text-align:center;">
+        <div style="font-size:24px;font-weight:800;font-family:var(--font-mono);color:${color};line-height:1;">${val}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
+      </div>`;
+  }
+  html += `</div>`;
+
+  // Issues breakdown
+  html += `<div class="section-label">Issue Breakdown</div>
+    <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:14px;margin-bottom:16px;">`;
+  
+  const sevColors = { critical:'var(--red)', security:'var(--orange)', warning:'var(--yellow)', info:'var(--accent)', suggestion:'var(--purple)' };
+  for (const [sev, count] of Object.entries(bySeverity)) {
+    const pct = issues.length ? Math.round((count/issues.length)*100) : 0;
+    html += `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="font-size:11px;font-family:var(--font-mono);color:var(--text2);width:80px;flex-shrink:0;">${sev}</span>
+        <div style="flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:${sevColors[sev]||'var(--accent)'};border-radius:3px;transition:width 1s ease;"></div>
+        </div>
+        <span style="font-size:11px;font-family:var(--font-mono);color:${sevColors[sev]||'var(--accent)'};width:28px;text-align:right;">${count}</span>
+      </div>`;
+  }
+  html += `</div>`;
+
+  document.getElementById('metricsContent').innerHTML = html;
+}
+
+function updateStats(data) {
+  sessionStats.reviews++;
+  const bugs = (data.issues || []).filter(i => i.severity === 'critical' || i.category === 'Bug').length;
+  const security = (data.issues || []).filter(i => i.severity === 'security' || i.category === 'Security').length;
+  sessionStats.bugs += bugs;
+  sessionStats.security += security;
+  
+  document.getElementById('stat-reviews').textContent = sessionStats.reviews;
+  document.getElementById('stat-bugs').textContent = sessionStats.bugs;
+  document.getElementById('stat-security').textContent = sessionStats.security;
+  document.getElementById('stat-fixed').textContent = sessionStats.fixed;
+}
+
+function addHistory(data) {
+  const name = document.getElementById('fileTabName').textContent.replace('📄 ','');
+  const score = data.score || 0;
+  const color = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
+  
+  analysisHistory.unshift({ name, score, issues: (data.issues||[]).length, time: new Date().toLocaleTimeString() });
+  
+  const list = document.getElementById('historyList');
+  list.innerHTML = analysisHistory.slice(0, 8).map(h => `
+    <div class="history-item">
+      <div class="history-severity" style="background:${h.score >= 80 ? 'var(--green)' : h.score >= 60 ? 'var(--yellow)' : 'var(--red)'}"></div>
+      <div class="history-info">
+        <div class="history-name">${escapeHtml(h.name)}</div>
+        <div class="history-meta">Score: ${h.score} · ${h.issues} issues · ${h.time}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ─── AI CHAT ──────────────────────────────────────────────────────────────────
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  
+  const messages = document.getElementById('chatMessages');
+  
+  messages.innerHTML += `
+    <div class="chat-msg">
+      <div class="chat-avatar avatar-user">U</div>
+      <div class="chat-text">${escapeHtml(msg)}</div>
+    </div>`;
+  
+  messages.innerHTML += `
+    <div class="chat-msg" id="thinkingMsg">
+      <div class="chat-avatar avatar-ai">AI</div>
+      <div class="chat-text" style="color:var(--text3)">Thinking<span class="typing-cursor"></span></div>
+    </div>`;
+  
+  messages.scrollTop = messages.scrollHeight;
+
+  const code = document.getElementById('codeInput').value;
+  const context = analysisResults ? `\n\nAnalysis results: Score ${analysisResults.score}, ${(analysisResults.issues||[]).length} issues found. Issues: ${(analysisResults.issues||[]).map(i=>i.title).join(', ')}` : '';
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 300,
+        messages: [{
+          role: "user",
+          content: `You are CodeSentinel AI assistant. Be concise (2-3 sentences max). Code context:\n${code.substring(0,500)}...${context}\n\nUser question: ${msg}`
+        }]
+      })
+    });
+
+    const data = await res.json();
+    const reply = data.content[0].text;
+    
+    document.getElementById('thinkingMsg').innerHTML = `
+      <div class="chat-avatar avatar-ai">AI</div>
+      <div class="chat-text">${escapeHtml(reply)}</div>`;
+    
+    messages.scrollTop = messages.scrollHeight;
+  } catch(e) {
+    document.getElementById('thinkingMsg').innerHTML = `
+      <div class="chat-avatar avatar-ai">AI</div>
+      <div class="chat-text" style="color:var(--red)">Failed to get response.</div>`;
+  }
+}
+
+// ─── EXPORT ───────────────────────────────────────────────────────────────────
+
+function exportMarkdown() {
+  if (!analysisResults) { showToast('⚠️ Run analysis first'); return; }
+  const d = analysisResults;
+  const name = document.getElementById('fileTabName').textContent.replace('📄 ','');
+  
+  let md = `# CodeSentinel Review: ${name}\n\n`;
+  md += `**Overall Score:** ${d.score}/100\n\n`;
+  md += `## Summary\n${d.summary}\n\n`;
+  md += `## Issues (${(d.issues||[]).length} found)\n\n`;
+  
+  for (const issue of (d.issues||[])) {
+    md += `### ${issue.severity.toUpperCase()}: ${issue.title}\n`;
+    md += `- **Line:** ~${issue.line}\n`;
+    md += `- **Category:** ${issue.category}\n`;
+    md += `- **Description:** ${issue.description}\n`;
+    if (issue.new_code) md += `\`\`\`\n${issue.new_code}\n\`\`\`\n`;
+    md += '\n';
+  }
+  
+  const blob = new Blob([md], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'code-review.md'; a.click();
+  showToast('📄 Markdown exported!');
+}
+
+function exportJSON() {
+  if (!analysisResults) { showToast('⚠️ Run analysis first'); return; }
+  const blob = new Blob([JSON.stringify(analysisResults, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'code-review.json'; a.click();
+  showToast('📦 JSON exported!');
+}
+
+function generatePRComment() {
+  if (!analysisResults) { showToast('⚠️ Run analysis first'); return; }
+  const d = analysisResults;
+  const score = d.score;
+  const emoji = score >= 80 ? '✅' : score >= 60 ? '⚠️' : '❌';
+  
+  let comment = `## ${emoji} CodeSentinel AI Review — Score: ${score}/100\n\n`;
+  comment += `> ${d.summary}\n\n`;
+  
+  const critical = (d.issues||[]).filter(i => i.severity === 'critical' || i.severity === 'security');
+  if (critical.length) {
+    comment += `### 🚨 Critical Issues (${critical.length})\n`;
+    critical.forEach(i => {
+      comment += `- **${i.title}** (Line ~${i.line}): ${i.description.substring(0,100)}...\n`;
+    });
+  }
+  
+  comment += `\n*Generated by [CodeSentinel](https://codesentinel.ai)*`;
+  
+  navigator.clipboard.writeText(comment).then(() => showToast('🐙 PR comment copied to clipboard!'));
+}
+
+function copyResults() {
+  if (!analysisResults) { showToast('⚠️ No results to copy'); return; }
+  const summary = `Score: ${analysisResults.score}/100 | ${(analysisResults.issues||[]).length} issues | ${analysisResults.summary}`;
+  navigator.clipboard.writeText(summary).then(() => showToast('📋 Copied to clipboard!'));
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Init line numbers
+updateLineNumbers();
+</script>
+</body>
+</html>
+`
